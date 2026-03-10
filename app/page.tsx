@@ -41,15 +41,35 @@ export default async function HomePage() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">입출고 관리</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Link href="/history" className="w-full">
+            <Button variant="outline" className="flex h-12 w-full items-center gap-2 justify-start">
+              <History className="h-4 w-4" />
+              이력 조회 (입고/출고/포장)
+            </Button>
+          </Link>
+          <Link href="/scan?batch=1" className="w-full">
+            <Button className="flex h-14 w-full items-center justify-center gap-2 text-base">
+              <ScanLine className="h-5 w-5" />
+              배치 스캔 시작
+            </Button>
+          </Link>
+          <Link href="/scan" className="w-full">
+            <Button variant="outline" className="flex h-12 w-full items-center gap-2 text-base">
+              <ScanLine className="h-4 w-4" />
+              단일 스캔
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">빠른 작업</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <Link href="/scan" className="w-full">
-            <Button className="flex h-14 w-full items-center justify-center gap-2 text-base">
-              <ScanLine className="h-5 w-5" />
-              위치 / 상품 스캔
-            </Button>
-          </Link>
           <div className="grid grid-cols-2 gap-3 text-xs">
             <Link href="/locations">
               <Button variant="outline" className="flex h-12 w-full items-center gap-2">
@@ -76,12 +96,6 @@ export default async function HomePage() {
               </Button>
             </Link>
           </div>
-          <Link href="/history">
-            <Button variant="outline" className="flex h-12 w-full items-center gap-2">
-              <History className="h-4 w-4" />
-              이력 조회
-            </Button>
-          </Link>
         </CardContent>
       </Card>
 

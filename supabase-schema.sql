@@ -13,6 +13,7 @@ create table public.products (
   id uuid primary key default gen_random_uuid(),
   sku text not null unique,
   name text not null,
+  barcode text unique,
   category text,
   description text,
   min_stock integer default 0 check (min_stock >= 0),
@@ -34,7 +35,7 @@ create unique index inventory_unique_product_location_lot
 
 create table public.audit_log (
   id uuid primary key default gen_random_uuid(),
-  action text not null check (action in ('입고', '출고', '이동', '수정')),
+  action text not null check (action in ('입고', '출고', '이동', '수정', '포장')),
   product_id uuid not null references public.products(id) on delete cascade,
   location_from uuid references public.locations(id),
   location_to uuid references public.locations(id),
@@ -66,6 +67,11 @@ create policy "Public read products"
 
 create policy "Public insert products"
   on public.products for insert
+  with check (true);
+
+create policy "Public update products"
+  on public.products for update
+  using (true)
   with check (true);
 
 -- inventory: 누구나 조회/입고/수정

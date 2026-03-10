@@ -42,14 +42,18 @@ function formatDate(iso: string) {
   });
 }
 
+const ACTION_OPTIONS = ['전체', '입고', '출고', '이동', '포장'] as const;
+
 export function HistoryClient({ initialLogs }: Props) {
   const [skuFilter, setSkuFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
+  const [actionFilter, setActionFilter] = useState<string>('전체');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
   const filtered = useMemo(() => {
     return initialLogs.filter((log) => {
+      if (actionFilter !== '전체' && log.action !== actionFilter) return false;
       const sku = skuFilter.trim().toLowerCase();
       const loc = locationFilter.trim().toLowerCase();
       const product = log.product as { sku?: string; name?: string } | null;
@@ -79,7 +83,7 @@ export function HistoryClient({ initialLogs }: Props) {
       }
       return true;
     });
-  }, [initialLogs, skuFilter, locationFilter, dateFrom, dateTo]);
+  }, [initialLogs, skuFilter, locationFilter, actionFilter, dateFrom, dateTo]);
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 pb-6 pt-6">
@@ -108,6 +112,20 @@ export function HistoryClient({ initialLogs }: Props) {
               onChange={(e) => setSkuFilter(e.target.value)}
               className="h-9"
             />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">액션</Label>
+            <select
+              value={actionFilter}
+              onChange={(e) => setActionFilter(e.target.value)}
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              {ACTION_OPTIONS.map((a) => (
+                <option key={a} value={a === '전체' ? '전체' : a}>
+                  {a}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="space-y-1">
             <Label className="text-xs">위치 코드</Label>

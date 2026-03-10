@@ -17,16 +17,17 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { Plus } from 'lucide-react';
+import { Plus, Pencil } from 'lucide-react';
 import Link from 'next/link';
 
-type Product = { id: string; sku: string; name: string; category: string | null };
+type Product = { id: string; sku: string; name: string; barcode: string | null; category: string | null };
 type Location = { id: string; code: string; name: string };
 
 const productSchema = z
   .object({
     sku: z.string().min(1, 'SKU를 입력하세요.'),
     name: z.string().min(1, '상품명을 입력하세요.'),
+    barcode: z.string().optional(),
     category: z.string().optional(),
     description: z.string().optional(),
     quantity: z.coerce.number().int().min(0, '0 이상 입력').default(0),
@@ -39,6 +40,14 @@ const productSchema = z
 
 type ProductForm = z.infer<typeof productSchema>;
 
+const productEditSchema = z.object({
+  sku: z.string().min(1, 'SKU를 입력하세요.'),
+  name: z.string().min(1, '상품명을 입력하세요.'),
+  barcode: z.string().optional(),
+  category: z.string().optional()
+});
+type ProductEditForm = z.infer<typeof productEditSchema>;
+
 interface Props {
   initialProducts: Product[];
   locations: Location[];
@@ -48,6 +57,7 @@ export function ProductsClient({ initialProducts, locations }: Props) {
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [searchQuery, setSearchQuery] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editProduct, setEditProduct] = useState<Product | null>(null);
   const searchParams = useSearchParams();
 
   const supabase = createSupabaseBrowserClient();
@@ -63,6 +73,7 @@ export function ProductsClient({ initialProducts, locations }: Props) {
       (p) =>
         p.sku.toLowerCase().includes(q) ||
         p.name.toLowerCase().includes(q) ||
+        (p.barcode?.toLowerCase().includes(q) ?? false) ||
         (p.category?.toLowerCase().includes(q) ?? false)
     );
   }, [products, searchQuery]);
@@ -72,6 +83,7 @@ export function ProductsClient({ initialProducts, locations }: Props) {
     defaultValues: {
       sku: '',
       name: '',
+      barcode: '',
       category: '',
       description: '',
       quantity: 0,
@@ -85,6 +97,7 @@ export function ProductsClient({ initialProducts, locations }: Props) {
       .insert({
         sku: values.sku.trim(),
         name: values.name.trim(),
+        barcode: values.barcode?.trim() || null,
         category: values.category?.trim() || null,
         description: values.description?.trim() || null
       })
@@ -93,7 +106,10 @@ export function ProductsClient({ initialProducts, locations }: Props) {
 
     if (productError) {
       if (productError.code === '23505') {
-        toast.error('이미 등록된 SKU입니다.');
+        const msg = productError.message.includes('barcode')
+          ? '이미 등록된 바코드입니다.'
+          : '이미 등록된 SKU입니다.';
+        toast.error(msg);
       } else {
         toast.error(productError.message);
       }
@@ -128,6 +144,7 @@ export function ProductsClient({ initialProducts, locations }: Props) {
     form.reset({
       sku: '',
       name: '',
+      barcode: '',
       category: '',
       description: '',
       quantity: 0,
@@ -136,9 +153,52 @@ export function ProductsClient({ initialProducts, locations }: Props) {
 
     const { data } = await supabase
       .from('products')
-      .select('id, sku, name, category')
+      .select('id, sku, name, barcode, category')
       .order('sku')
       .limit(2000);
+    if (data) setProducts(data);
+  };
+
+  const editForm = useForm<ProductEditForm>({
+    resolver: zodResolver(productEditSchema),
+    defaultValues: { sku: '', name: '', barcode: '', category: '' }
+  });
+
+  useEffect(() => {
+    if (editProduct) {
+      editForm.reset({
+        sku: editProduct.sku,
+        name: editProduct.name,
+        barcode: editProduct.barcode ?? '',
+        category: editProduct.category ?? ''
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editProduct]);
+
+  const onSubmitEdit = async (values: ProductEditForm) => {
+    if (!editProduct) return;
+    const { error } = await supabase
+      .from('products')
+      .update({
+        sku: values.sku.trim(),
+        name: values.name.trim(),
+        barcode: values.barcode?.trim() || null,
+        category: values.category?.trim() || null
+      })
+      .eq('id', editProduct.id);
+
+    if (error) {
+      if (error.code === '23505') {
+        toast.error(error.message.includes('barcode') ? '이미 등록된 바코드입니다.' : '이미 등록된 SKU입니다.');
+      } else {
+        toast.error(error.message);
+      }
+      return;
+    }
+    toast.success('상품이 수정되었습니다.');
+    setEditProduct(null);
+    const { data } = await supabase.from('products').select('id, sku, name, barcode, category').order('sku').limit(2000);
     if (data) setProducts(data);
   };
 
@@ -173,19 +233,26 @@ export function ProductsClient({ initialProducts, locations }: Props) {
               {filtered.map((p) => (
                 <li
                   key={p.id}
-                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-xs"
+                  className="flex cursor-pointer items-center justify-between rounded-lg border border-border px-3 py-2 text-xs hover:bg-muted"
+                  onClick={() => setEditProduct(p)}
                 >
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="font-mono text-[11px] text-muted-foreground">
                       {p.sku}
+                      {p.barcode && (
+                        <span className="ml-1 text-[10px]">· {p.barcode}</span>
+                      )}
                     </p>
-                    <p className="text-xs font-semibold">{p.name}</p>
+                    <p className="truncate text-xs font-semibold">{p.name}</p>
                   </div>
-                  {p.category && (
-                    <p className="max-w-[30%] truncate text-[11px] text-muted-foreground">
-                      {p.category}
-                    </p>
-                  )}
+                  <div className="flex shrink-0 items-center gap-1">
+                    {p.category && (
+                      <span className="max-w-[60px] truncate text-[11px] text-muted-foreground">
+                        {p.category}
+                      </span>
+                    )}
+                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
                 </li>
               ))}
             </ul>
@@ -227,6 +294,14 @@ export function ProductsClient({ initialProducts, locations }: Props) {
                   {form.formState.errors.name.message}
                 </p>
               )}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="barcode">바코드</Label>
+              <Input
+                id="barcode"
+                placeholder="선택사항 (등록 시 유니크)"
+                {...form.register('barcode')}
+              />
             </div>
             <div className="space-y-1">
               <Label htmlFor="category">카테고리</Label>
@@ -300,6 +375,39 @@ export function ProductsClient({ initialProducts, locations }: Props) {
             <Button type="submit" className="mt-1 h-10 w-full">
               등록
             </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editProduct} onOpenChange={(o) => !o && setEditProduct(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>상품 수정</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={editForm.handleSubmit(onSubmitEdit)} className="flex flex-col gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="edit-sku">SKU *</Label>
+              <Input id="edit-sku" {...editForm.register('sku')} />
+              {editForm.formState.errors.sku && (
+                <p className="text-[11px] text-destructive">{editForm.formState.errors.sku.message}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-name">상품명 *</Label>
+              <Input id="edit-name" {...editForm.register('name')} />
+              {editForm.formState.errors.name && (
+                <p className="text-[11px] text-destructive">{editForm.formState.errors.name.message}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-barcode">바코드</Label>
+              <Input id="edit-barcode" placeholder="선택사항" {...editForm.register('barcode')} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-category">카테고리</Label>
+              <Input id="edit-category" {...editForm.register('category')} />
+            </div>
+            <Button type="submit" className="mt-1 h-10 w-full">저장</Button>
           </form>
         </DialogContent>
       </Dialog>
