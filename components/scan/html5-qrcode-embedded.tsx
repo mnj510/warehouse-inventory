@@ -64,10 +64,21 @@ export function Html5QrcodeEmbedded({ onScan, onError, fullscreen }: Html5Qrcode
     void init();
 
     return () => {
-      if (scannerRef.current) {
-        Promise.resolve(scannerRef.current.stop()).catch(() => undefined);
-        Promise.resolve(scannerRef.current.clear() as unknown).catch(() => undefined);
-      }
+      const scanner = scannerRef.current;
+      if (!scanner) return;
+      scannerRef.current = null;
+      scanner
+        .stop()
+        .then(() => {
+          try {
+            scanner.clear();
+          } catch {
+            /* 무시 */
+          }
+        })
+        .catch(() => {
+          /* stop 실패 시 clear 시도 금지 */
+        });
     };
   }, [fullscreen, onScan, onError]);
 

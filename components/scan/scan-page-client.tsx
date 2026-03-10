@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -53,6 +53,7 @@ type BatchItem = {
 };
 
 export function ScanPageClient() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialMode = searchParams.get('mode') as ScanMode | null;
   const [scanMode, setScanMode] = useState<ScanMode>(null);
@@ -363,11 +364,29 @@ export function ScanPageClient() {
     return handleScan;
   }, [changeLocationTarget, handleChangeLocationScan, handleScan]);
 
+  const goHome = () => {
+    setScanMode(null);
+    setChangeLocationTarget(null);
+    setNewLocationScanned(null);
+    setCameraError(false);
+    router.replace('/');
+  };
+
   return (
     <main className="flex min-h-screen flex-col bg-black text-white">
       <div className="flex items-center justify-between px-4 py-3">
+        <Link
+          href="/"
+          onClick={(e) => {
+            e.preventDefault();
+            goHome();
+          }}
+          className="text-sm text-white/80 hover:text-white"
+        >
+          ← 홈
+        </Link>
         <h1 className="text-sm font-medium">스캔 (Scan)</h1>
-        {isScanning && (
+        {isScanning ? (
           <Button
             variant="outline"
             size="sm"
@@ -380,6 +399,8 @@ export function ScanPageClient() {
           >
             {t.scan.stopScan}
           </Button>
+        ) : (
+          <span className="w-8" />
         )}
       </div>
 
