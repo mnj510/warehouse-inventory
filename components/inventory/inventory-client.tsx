@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -50,35 +49,45 @@ export function InventoryClient({ location, initialItems }: Props) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   useEffect(() => {
-    const channel = supabase
-      .channel('inventory-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'inventory',
-          filter: `location_id=eq.${location.id}`
-        },
-        (payload: RealtimePostgresChangesPayload<any>) => {
-          setItems((prev) => {
-            if (payload.eventType === 'INSERT') {
-              return [payload.new as InventoryRow, ...prev];
-            }
-            if (payload.eventType === 'UPDATE') {
-              return prev.map((it) => (it.id === payload.new.id ? (payload.new as InventoryRow) : it));
-            }
-            if (payload.eventType === 'DELETE') {
-              return prev.filter((it) => it.id !== payload.old.id);
-            }
-            return prev;
-          });
-        }
-      )
-      .subscribe();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    const refetch = () => {
+      supabase
+        .from('inventory')
+        .select('id, quantity, lot, updated_at, product:products(id, sku, name), location:locations(id, code, name)')
+        .eq('location_id', location.id)
+        .order('updated_at', { ascending: false })
+        .then((res) => {
+          if (res.data)
+            setItems(
+              res.data.map((row: { product?: unknown; location?: unknown }) => ({
+                ...row,
+                product: Array.isArray(row.product) ? row.product[0] ?? null : row.product,
+                location: Array.isArray(row.location) ? row.location[0] ?? null : row.location
+              })) as InventoryRow[]
+            );
+        });
+    };
+
+    try {
+      channel = supabase
+        .channel('inventory-realtime')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'inventory',
+            filter: `location_id=eq.${location.id}`
+          },
+          () => refetch()
+        )
+        .subscribe();
+    } catch {
+      /* Realtime 미지원 시 무시 */
+    }
 
     return () => {
-      void supabase.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [location.id, supabase]);
 

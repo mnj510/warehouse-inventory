@@ -16,6 +16,7 @@ export default function ScanPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const hasCameraError = useRef(false);
+  const scanHandled = useRef(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -30,7 +31,10 @@ export default function ScanPage() {
           variant="outline"
           size="sm"
           className="h-8 border-white/30 bg-transparent text-xs text-white"
-          onClick={() => setIsScanning((prev) => !prev)}
+          onClick={() => {
+            scanHandled.current = false;
+            setIsScanning((prev) => !prev);
+          }}
         >
           {isScanning ? '스캔 종료' : '스캔 시작'}
         </Button>
@@ -41,24 +45,43 @@ export default function ScanPage() {
           <>
             <Html5QrcodeScanner
               onScan={(result) => {
-                setLastScanned(result);
-                toast.success(`위치 스캔: ${result}`);
-                if (navigator.vibrate) {
-                  navigator.vibrate(100);
+                if (scanHandled.current) return;
+                scanHandled.current = true;
+                try {
+                  const trimmed = String(result || '').trim();
+                  if (!trimmed) {
+                    scanHandled.current = false;
+                    return;
+                  }
+                  setLastScanned(trimmed);
+                  toast.success(`위치 스캔: ${trimmed}`);
+                  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                    navigator.vibrate(100);
+                  }
+                  try {
+                    const Ctx = (window as Window & { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext
+                      || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+                    if (Ctx) {
+                      const ctx = new Ctx();
+                      const osc = ctx.createOscillator();
+                      osc.type = 'sine';
+                      osc.frequency.value = 900;
+                      osc.connect(ctx.destination);
+                      osc.start();
+                      setTimeout(() => {
+                        try {
+                          osc.stop();
+                          ctx.close();
+                        } catch { /* ignore */ }
+                      }, 120);
+                    }
+                  } catch { /* 소리 미지원 */ }
+                  router.push(`/inventory/${encodeURIComponent(trimmed)}`);
+                } catch (err) {
+                  console.error(err);
+                  toast.error('스캔 처리 중 오류가 발생했습니다.');
+                  scanHandled.current = false;
                 }
-                const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-                const osc = ctx.createOscillator();
-                osc.type = 'sine';
-                osc.frequency.value = 900;
-                osc.connect(ctx.destination);
-                osc.start();
-                setTimeout(() => {
-                  osc.stop();
-                  ctx.close();
-                }, 120);
-
-                const encoded = encodeURIComponent(result);
-                router.push(`/inventory/${encoded}`);
               }}
               onError={(message) => {
                 if (!hasCameraError.current) {
