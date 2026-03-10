@@ -9,6 +9,11 @@ interface Html5QrcodeEmbeddedProps {
   fullscreen?: boolean;
 }
 
+const CAMERA_ATTEMPTS: Array<{ facingMode: string }> = [
+  { facingMode: 'environment' }, // 모바일 후면 카메라 (바코드 스캔에 적합)
+  { facingMode: 'user' }         // 전면 카메라 또는 데스크톱
+];
+
 export function Html5QrcodeEmbedded({ onScan, onError, fullscreen }: Html5QrcodeEmbeddedProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const containerId = 'html5-qrcode-scanner';
@@ -16,32 +21,46 @@ export function Html5QrcodeEmbedded({ onScan, onError, fullscreen }: Html5Qrcode
 
   useEffect(() => {
     const init = async () => {
-      try {
-        const html5QrCode = new Html5Qrcode(containerId);
-        scannerRef.current = html5QrCode;
+      const html5QrCode = new Html5Qrcode(containerId);
+      scannerRef.current = html5QrCode;
 
-        await html5QrCode.start(
-          {},
-          {
-            fps: 5,
-            qrbox: fullscreen ? undefined : { width: 250, height: 250 }
-          },
-          (decodedText) => {
-            try {
-              onScan(String(decodedText ?? ''));
-            } catch (e) {
-              console.error('onScan error', e);
+      const config = {
+        fps: 5,
+        qrbox: fullscreen ? undefined : { width: 250, height: 250 }
+      };
+
+      let lastError: unknown = null;
+      for (const cameraConfig of CAMERA_ATTEMPTS) {
+        try {
+          await html5QrCode.start(
+            cameraConfig,
+            config,
+            (decodedText) => {
+              try {
+                onScan(String(decodedText ?? ''));
+              } catch (e) {
+                console.error('onScan error', e);
+              }
+            },
+            (errorMessage) => {
+              onError?.(errorMessage);
             }
-          },
-          (errorMessage) => {
-            onError?.(errorMessage);
+          );
+          return; // 성공 시 종료
+        } catch (error) {
+          lastError = error;
+          try {
+            await html5QrCode.stop();
+          } catch {
+            /* 무시 */
           }
-        );
-      } catch (error) {
-        onError?.(
-          error instanceof Error ? error.message : '스캐너 초기화 중 오류가 발생했습니다.'
-        );
+        }
       }
+      const errMsg =
+        lastError instanceof Error
+          ? lastError.message
+          : String(lastError ?? '스캐너 초기화 중 오류가 발생했습니다.');
+      onError?.(errMsg);
     };
 
     void init();

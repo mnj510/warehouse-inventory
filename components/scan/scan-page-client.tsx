@@ -55,7 +55,7 @@ type BatchItem = {
 export function ScanPageClient() {
   const searchParams = useSearchParams();
   const initialMode = searchParams.get('mode') as ScanMode | null;
-  const [scanMode, setScanMode] = useState<ScanMode>(initialMode === 'location' || initialMode === 'product' ? initialMode : null);
+  const [scanMode, setScanMode] = useState<ScanMode>(null);
   const [currentLocation, setCurrentLocation] = useState<StoredLocation | null>(null);
   const [locationProducts, setLocationProducts] = useState<InventoryRow[]>([]);
   const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
@@ -71,6 +71,24 @@ export function ScanPageClient() {
   useEffect(() => {
     setCurrentLocation(getStoredLocation());
   }, []);
+
+  useEffect(() => {
+    const m = searchParams.get('mode');
+    if (m !== 'location' && m !== 'product') return;
+    setRequestingCamera(true);
+    navigator.mediaDevices
+      ?.getUserMedia({ video: true })
+      .then((stream) => {
+        stream.getTracks().forEach((t) => t.stop());
+        setScanMode(m);
+        setRequestingCamera(false);
+      })
+      .catch(() => {
+        setCameraError(true);
+        setRequestingCamera(false);
+        toast.error(t.messages.cameraError);
+      });
+  }, [searchParams]);
 
   const playSuccessFeedback = () => {
     if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(100);
@@ -367,6 +385,13 @@ export function ScanPageClient() {
 
       {!isScanning ? (
         <div className="flex flex-1 flex-col gap-4 p-4">
+          {requestingCamera && searchParams.get('mode') ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 text-white/80">
+              <p className="text-sm">카메라 권한 요청 중...</p>
+              <p className="text-xs">(권한 허용해 주세요)</p>
+            </div>
+          ) : (
+          <>
           <div className="flex flex-col gap-3">
             <Button
               className="h-16 w-full gap-2 text-base"
@@ -550,6 +575,8 @@ export function ScanPageClient() {
                 </div>
               </CardContent>
             </Card>
+          )}
+          </>
           )}
         </div>
       ) : cameraError ? (
