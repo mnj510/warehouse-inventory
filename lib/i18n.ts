@@ -32,6 +32,13 @@ export const t = {
     insufficientQty: (sku: string, current: number) =>
       `${sku}: 재고 부족 (Insufficient quantity) (현재 ${current}개)`,
     cameraError: '카메라를 사용할 수 없습니다. 권한을 확인하세요. (Camera unavailable. Please check permissions.)',
+    cameraPermissionHelp: '카메라 권한 허용 방법 (How to allow camera)',
+    cameraPermissionSteps: `1. 주소창 왼쪽 자물쇠/정보 아이콘 탭
+2. "사이트 설정" 또는 "권한" 선택
+3. 카메라를 "허용"으로 변경
+4. 페이지 새로고침 후 다시 스캔 시도
+
+또는 아래 수동 입력으로 코드를 입력하세요.`,
     batchEmpty: '배치 목록이 비어 있습니다. (Batch list is empty)',
     locationRequired: '출고/포장 시 위치를 먼저 스캔하세요. (Scan location first for stock out/pack)',
     moveConfirm: (to: string) => `이동할 위치 (Move to): ${to}. 저장하시겠습니까? (Save?)`,

@@ -63,7 +63,8 @@ export function ScanPageClient() {
   const [changeLocationTarget, setChangeLocationTarget] = useState<{ from: StoredLocation; items: InventoryRow[] } | null>(null);
   const [newLocationScanned, setNewLocationScanned] = useState<StoredLocation | null>(null);
   const [manualInput, setManualInput] = useState('');
-  const hasCameraError = useRef(false);
+  const [cameraError, setCameraError] = useState(false);
+  const [scannerKey, setScannerKey] = useState(0);
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   useEffect(() => {
@@ -522,9 +523,74 @@ export function ScanPageClient() {
             </Card>
           )}
         </div>
+      ) : cameraError ? (
+        <div className="flex flex-1 flex-col gap-4 overflow-auto p-4">
+          <Card className="border-amber-500/50 bg-amber-500/10">
+            <CardHeader>
+              <CardTitle className="text-sm text-amber-200">{t.messages.cameraPermissionHelp}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="whitespace-pre-line text-xs text-white/90">{t.messages.cameraPermissionSteps}</p>
+              <Button
+                variant="outline"
+                className="w-full border-amber-500/50 text-amber-200"
+                onClick={() => {
+                  setCameraError(false);
+                  setScannerKey((k) => k + 1);
+                }}
+              >
+                다시 시도 (Retry)
+              </Button>
+            </CardContent>
+          </Card>
+          <Card className="border-white/20 bg-white/5">
+            <CardHeader>
+              <CardTitle className="text-sm text-white">수동 입력 (Manual Input)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const trimmed = manualInput.trim();
+                  if (!trimmed) {
+                    toast.error(t.messages.enterCode);
+                    return;
+                  }
+                  if (scanMode === 'location') void handleLocationScanned(trimmed);
+                  else if (scanMode === 'product') void handleProductScanned(trimmed);
+                  setManualInput('');
+                }}
+                className="flex gap-2"
+              >
+                <Input
+                  placeholder={t.scan.manualInput}
+                  value={manualInput}
+                  onChange={(e) => setManualInput(e.target.value)}
+                  className="flex-1 border-white/30 bg-white/5 text-white"
+                  autoFocus
+                />
+                <Button type="submit" variant="outline" className="shrink-0 border-white/30 text-white">
+                  입력
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+          <Button
+            variant="outline"
+            className="border-white/30 text-white"
+            onClick={() => {
+              setCameraError(false);
+              setScanMode(null);
+              if (changeLocationTarget) setChangeLocationTarget(null);
+            }}
+          >
+            {t.scan.stopScan}
+          </Button>
+        </div>
       ) : (
         <div className="relative flex flex-1 flex-col">
           <Html5QrcodeScanner
+            key={scannerKey}
             onScan={(r) => {
               const trimmed = String(r ?? '').trim();
               if (!trimmed) return;
@@ -535,10 +601,8 @@ export function ScanPageClient() {
               }
             }}
             onError={(msg) => {
-              if (!hasCameraError.current) {
-                hasCameraError.current = true;
-                toast.error(t.messages.cameraError);
-              }
+              setCameraError(true);
+              toast.error(t.messages.cameraError);
               console.error(msg);
             }}
             fullscreen
