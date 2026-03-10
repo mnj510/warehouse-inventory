@@ -21,9 +21,9 @@ export function Html5QrcodeEmbedded({ onScan, onError, fullscreen }: Html5Qrcode
         scannerRef.current = html5QrCode;
 
         await html5QrCode.start(
-          { facingMode: 'environment' },
+          {},
           {
-            fps: 10,
+            fps: 5,
             qrbox: fullscreen ? undefined : { width: 250, height: 250 }
           },
           (decodedText) => {

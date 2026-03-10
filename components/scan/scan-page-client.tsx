@@ -65,6 +65,7 @@ export function ScanPageClient() {
   const [manualInput, setManualInput] = useState('');
   const [cameraError, setCameraError] = useState(false);
   const [scannerKey, setScannerKey] = useState(0);
+  const [requestingCamera, setRequestingCamera] = useState(false);
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   useEffect(() => {
@@ -369,18 +370,46 @@ export function ScanPageClient() {
           <div className="flex flex-col gap-3">
             <Button
               className="h-16 w-full gap-2 text-base"
-              onClick={() => setScanMode('location')}
+              disabled={requestingCamera}
+              onClick={async () => {
+                setRequestingCamera(true);
+                setCameraError(false);
+                try {
+                  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                  stream.getTracks().forEach((t) => t.stop());
+                  setScanMode('location');
+                } catch {
+                  setCameraError(true);
+                  toast.error(t.messages.cameraError);
+                } finally {
+                  setRequestingCamera(false);
+                }
+              }}
             >
               <MapPinned className="h-5 w-5" />
-              {t.scan.locationScan}
+              {requestingCamera ? '카메라 연결 중...' : t.scan.locationScan}
             </Button>
             <Button
               variant="outline"
               className="h-16 w-full gap-2 border-white/30 bg-white/10 text-base text-white"
-              onClick={() => setScanMode('product')}
+              disabled={requestingCamera}
+              onClick={async () => {
+                setRequestingCamera(true);
+                setCameraError(false);
+                try {
+                  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                  stream.getTracks().forEach((t) => t.stop());
+                  setScanMode('product');
+                } catch {
+                  setCameraError(true);
+                  toast.error(t.messages.cameraError);
+                } finally {
+                  setRequestingCamera(false);
+                }
+              }}
             >
               <Package className="h-5 w-5" />
-              {t.scan.productBarcodeScan}
+              {requestingCamera ? '카메라 연결 중...' : t.scan.productBarcodeScan}
             </Button>
           </div>
 
