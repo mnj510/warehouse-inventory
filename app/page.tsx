@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Search, ScanLine, PackageSearch, MapPinned, Plus, History } from 'lucide-react';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { LowStockSection } from '@/components/home/low-stock-section';
+import { RecentLocationShortcut } from '@/components/home/recent-location-shortcut';
 
 export default async function HomePage() {
   const supabase = createSupabaseServerClient();
@@ -41,25 +42,20 @@ export default async function HomePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">입출고 관리</CardTitle>
+          <CardTitle className="text-base">입출고 관리 (Inbound/Outbound)</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          <RecentLocationShortcut />
           <Link href="/history" className="w-full">
             <Button variant="outline" className="flex h-12 w-full items-center gap-2 justify-start">
               <History className="h-4 w-4" />
               이력 조회 (입고/출고/포장)
             </Button>
           </Link>
-          <Link href="/scan?batch=1" className="w-full">
+          <Link href="/scan" className="w-full">
             <Button className="flex h-14 w-full items-center justify-center gap-2 text-base">
               <ScanLine className="h-5 w-5" />
-              배치 스캔 시작
-            </Button>
-          </Link>
-          <Link href="/scan" className="w-full">
-            <Button variant="outline" className="flex h-12 w-full items-center gap-2 text-base">
-              <ScanLine className="h-4 w-4" />
-              단일 스캔
+              위치 스캔 / 제품 바코드 스캔 (Location / Product Scan)
             </Button>
           </Link>
         </CardContent>

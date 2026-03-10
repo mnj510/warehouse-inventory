@@ -1,0 +1,40 @@
+export const t = {
+  scan: {
+    locationScan: '위치 스캔 (Location Scan)',
+    productBarcodeScan: '제품 바코드 스캔 (Product Barcode Scan)',
+    changeLocation: '위치 변경 (Change Location)',
+    save: '저장 (Save)',
+    scanLocation: '위치 바코드를 스캔하세요',
+    scanProduct: '제품 바코드를 스캔하세요',
+    stopScan: '스캔 종료 (Stop Scan)',
+    manualInput: '수동 입력 (Manual Input)',
+  },
+  table: {
+    productName: '제품 이름 (Product Name)',
+    sku: 'SKU',
+    barcode: '바코드 (Barcode)',
+    quantity: '수량 (Quantity)',
+    quantityChange: '수량 변경 (Quantity Change)',
+    lot: '로트 (Lot)',
+    location: '위치 (Location)',
+  },
+  actions: {
+    stockIn: '입고 (Stock In)',
+    stockOut: '출고 (Stock Out)',
+    pack: '포장 (Pack)',
+  },
+  messages: {
+    noLocationSet: '위치가 설정되지 않았습니다. 먼저 위치를 스캔하세요 (No location set. Please scan location first)',
+    unknownBarcode: '알 수 없는 바코드 (Unknown barcode)',
+    locationUpdated: '위치 변경 완료 (Location updated successfully)',
+    processedSuccessfully: '처리 완료 (Processed successfully)',
+    itemsProcessed: (n: number) => `처리 완료 (Processed successfully): ${n} items`,
+    insufficientQty: (sku: string, current: number) =>
+      `${sku}: 재고 부족 (Insufficient quantity) (현재 ${current}개)`,
+    cameraError: '카메라를 사용할 수 없습니다. 권한을 확인하세요. (Camera unavailable. Please check permissions.)',
+    batchEmpty: '배치 목록이 비어 있습니다. (Batch list is empty)',
+    locationRequired: '출고/포장 시 위치를 먼저 스캔하세요. (Scan location first for stock out/pack)',
+    moveConfirm: (to: string) => `이동할 위치 (Move to): ${to}. 저장하시겠습니까? (Save?)`,
+    enterCode: '코드를 입력하세요 (Enter code)',
+  },
+} as const;

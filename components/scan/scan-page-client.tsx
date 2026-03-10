@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,48 +22,55 @@ import {
 } from '@/components/ui/table';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { ArrowDownToLine, ArrowUpFromLine, Truck, Search, Package, Trash2 } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, MapPinned, Package, Trash2 } from 'lucide-react';
+import { t } from '@/lib/i18n';
+import { getStoredLocation, setStoredLocation, StoredLocation } from '@/lib/location-storage';
 
 const Html5QrcodeScanner = dynamic(
   () => import('@/components/scan/html5-qrcode-embedded').then((m) => m.Html5QrcodeEmbedded),
   { ssr: false }
 );
 
-type ScannedType = 'location' | 'sku' | 'unknown';
+type ScanMode = 'location' | 'product' | null;
+
+type InventoryRow = {
+  id: string;
+  quantity: number;
+  lot: string | null;
+  product_id: string;
+  product: { sku: string; name: string; barcode: string | null };
+};
 
 type BatchItem = {
   product_id: string;
   sku: string;
   name: string;
   barcode: string | null;
-  quantity: number;
+  quantity_adjust: number;
   location_id: string | null;
   location_code: string | null;
 };
 
 export function ScanPageClient() {
-  const searchParams = useSearchParams();
-  const isBatchMode = searchParams.get('batch') === '1';
-
-  const [isScanning, setIsScanning] = useState(false);
-  const [manualInput, setManualInput] = useState('');
-  const [lastScanned, setLastScanned] = useState<string | null>(null);
-  const [actionDialogOpen, setActionDialogOpen] = useState(false);
-  const [scannedValue, setScannedValue] = useState('');
-  const [scannedType, setScannedType] = useState<ScannedType>('unknown');
+  const [scanMode, setScanMode] = useState<ScanMode>(null);
+  const [currentLocation, setCurrentLocation] = useState<StoredLocation | null>(null);
+  const [locationProducts, setLocationProducts] = useState<InventoryRow[]>([]);
   const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
-  const [defaultLocation, setDefaultLocation] = useState<{ id: string; code: string } | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [changeLocationTarget, setChangeLocationTarget] = useState<{ from: StoredLocation; items: InventoryRow[] } | null>(null);
+  const [newLocationScanned, setNewLocationScanned] = useState<StoredLocation | null>(null);
+  const [manualInput, setManualInput] = useState('');
   const hasCameraError = useRef(false);
-  const scanHandled = useRef(false);
-  const router = useRouter();
-  const supabase = createSupabaseBrowserClient();
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+
+  useEffect(() => {
+    setCurrentLocation(getStoredLocation());
+  }, []);
 
   const playSuccessFeedback = () => {
     if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(100);
     try {
-      const Ctx =
-        (window as Window & { AudioContext?: typeof AudioContext }).AudioContext ||
+      const Ctx = (window as Window & { AudioContext?: typeof AudioContext }).AudioContext ||
         (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (Ctx) {
         const ctx = new Ctx();
@@ -77,44 +83,74 @@ export function ScanPageClient() {
           try {
             osc.stop();
             ctx.close();
-          } catch {
-            /* ignore */
-          }
+          } catch {}
         }, 120);
       }
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   };
 
-  const lookupByBarcodeOrSku = async (trimmed: string) => {
+  const lookupLocation = useCallback(async (code: string) => {
+    const { data } = await supabase.from('locations').select('id, code, name').eq('code', code.trim()).maybeSingle();
+    return data;
+  }, [supabase]);
+
+  const lookupProduct = useCallback(async (trimmed: string) => {
     try {
       const bySku = await supabase.from('products').select('id, sku, name').eq('sku', trimmed).maybeSingle();
       if (bySku.data) return { ...bySku.data, barcode: (bySku.data as { barcode?: string }).barcode ?? null };
       const byBarcode = await supabase.from('products').select('id, sku, name').eq('barcode', trimmed).maybeSingle();
       if (byBarcode.error) return null;
       return byBarcode.data ? { ...byBarcode.data, barcode: trimmed } : null;
-    } catch (e) {
-      console.error('lookupByBarcodeOrSku', e);
+    } catch {
       return null;
     }
-  };
+  }, [supabase]);
 
-  const addToBatch = async (trimmed: string) => {
-    try {
-      const product = await lookupByBarcodeOrSku(trimmed);
-      if (!product) {
-        toast.error('등록되지 않은 바코드입니다.');
-        return;
-      }
-      const existing = batchItems.find(
-      (i) => i.product_id === product.id && i.location_id === defaultLocation?.id
-    );
+  const fetchInventoryAtLocation = useCallback(async (locationId: string) => {
+    const { data } = await supabase
+      .from('inventory')
+      .select('id, quantity, lot, product_id, product:products(sku, name, barcode)')
+      .eq('location_id', locationId)
+      .gt('quantity', 0)
+      .order('updated_at', { ascending: false });
+    const rows = (data ?? []).map((r: { product?: unknown }) => ({
+      ...r,
+      product: Array.isArray(r.product) ? r.product[0] : r.product
+    })) as InventoryRow[];
+    return rows;
+  }, [supabase]);
+
+  const handleLocationScanned = useCallback(async (code: string) => {
+    const loc = await lookupLocation(code);
+    if (!loc) {
+      toast.error(t.messages.unknownBarcode);
+      return;
+    }
+    playSuccessFeedback();
+    const items = await fetchInventoryAtLocation(loc.id);
+    setLocationProducts(items);
+    setCurrentLocation(loc);
+    setStoredLocation(loc);
+    setScanMode(null);
+    toast.success(`${loc.code} - ${loc.name}`);
+  }, [lookupLocation, fetchInventoryAtLocation]);
+
+  const handleProductScanned = useCallback(async (code: string) => {
+    const loc = currentLocation ?? getStoredLocation();
+    if (!loc) {
+      toast.error(t.messages.noLocationSet);
+      return;
+    }
+    const product = await lookupProduct(code);
+    if (!product) {
+      toast.error(t.messages.unknownBarcode);
+      return;
+    }
+    playSuccessFeedback();
+    const existing = batchItems.find((i) => i.product_id === product.id && i.location_id === loc.id);
     if (existing) {
       setBatchItems((prev) =>
-        prev.map((it) =>
-          it === existing ? { ...it, quantity: it.quantity + 1 } : it
-        )
+        prev.map((it) => (it === existing ? { ...it, quantity_adjust: it.quantity_adjust + 1 } : it))
       );
     } else {
       setBatchItems((prev) => [
@@ -124,143 +160,92 @@ export function ScanPageClient() {
           sku: product.sku,
           name: product.name,
           barcode: product.barcode,
-          quantity: 1,
-          location_id: defaultLocation?.id ?? null,
-          location_code: defaultLocation?.code ?? null
+          quantity_adjust: 1,
+          location_id: loc.id,
+          location_code: loc.code
         }
       ]);
-      toast.success(`${product.name} 추가`);
     }
-    } catch (e) {
-      console.error('addToBatch', e);
-      toast.error('등록되지 않은 바코드입니다.');
-    }
-  };
+    toast.success(`${product.name}`);
+  }, [currentLocation, batchItems, lookupProduct]);
 
-  const setLocationToBatch = (data: { id: string; code: string }) => {
-    setDefaultLocation(data);
-    setBatchItems((prev) =>
-      prev.map((it) => ({ ...it, location_id: data.id, location_code: data.code }))
-    );
-    toast.success(`기본 위치: ${data.code}`);
-  };
-
-  const handleBatchScan = async (trimmed: string) => {
-    try {
-      const [locRes, prodRes] = await Promise.all([
-        supabase.from('locations').select('id, code').eq('code', trimmed).maybeSingle(),
-        lookupByBarcodeOrSku(trimmed)
-      ]);
-      if (locRes.data) {
-        setLocationToBatch(locRes.data);
-      } else if (prodRes) {
-        await addToBatch(trimmed);
-      } else {
-        toast.error('등록되지 않은 바코드입니다.');
-      }
-    } catch (e) {
-      console.error('handleBatchScan', e);
-      toast.error('스캔 처리 중 오류가 발생했습니다.');
-    }
-  };
-
-  const detectAndShowDialog = async (trimmed: string) => {
-    try {
-      const [locRes, product] = await Promise.all([
-        supabase.from('locations').select('id, code').eq('code', trimmed).maybeSingle(),
-        lookupByBarcodeOrSku(trimmed)
-      ]);
-
-      const isLocation = locRes.data != null;
-      const isSku = product != null;
-
-      if (isLocation) {
-      setScannedType('location');
-      setScannedValue(trimmed);
-      setActionDialogOpen(true);
-      toast.success(`위치 인식: ${trimmed}`);
-    } else if (isSku) {
-      setScannedType('sku');
-      setScannedValue(trimmed);
-      setActionDialogOpen(true);
-      toast.success(`SKU 인식: ${trimmed}`);
-    } else {
-      const maybeLoc = /^[A-Za-z]\d/.test(trimmed) || trimmed.length <= 10;
-      if (maybeLoc) {
-        setScannedType('location');
-        setScannedValue(trimmed);
-        setActionDialogOpen(true);
-        toast.success(`코드 인식: ${trimmed}`);
-      } else {
-        toast.error('등록되지 않은 바코드입니다.');
-      }
-    }
-    } catch (e) {
-      console.error('detectAndShowDialog', e);
-      toast.error('스캔 처리 중 오류가 발생했습니다.');
-    } finally {
-      scanHandled.current = false;
-    }
-  };
-
-  const handleScan = (result: unknown) => {
+  const handleScan = useCallback((result: unknown) => {
     const trimmed = String(result ?? '').trim();
     if (!trimmed) return;
 
-    setLastScanned(trimmed);
-    playSuccessFeedback();
-
-    if (isBatchMode) {
-      void handleBatchScan(trimmed);
-    } else {
-      if (scanHandled.current) return;
-      scanHandled.current = true;
-      void detectAndShowDialog(trimmed);
+    if (scanMode === 'location') {
+      void handleLocationScanned(trimmed);
+    } else if (scanMode === 'product') {
+      void handleProductScanned(trimmed);
     }
-  };
+  }, [scanMode, handleLocationScanned, handleProductScanned]);
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = manualInput.trim();
     if (!trimmed) {
-      toast.error('코드를 입력하세요.');
+      toast.error(t.messages.enterCode);
       return;
     }
-    setLastScanned(trimmed);
-    if (isBatchMode) {
-      void handleBatchScan(trimmed);
-    } else {
-      void detectAndShowDialog(trimmed);
+    if (scanMode === 'location') {
+      void handleLocationScanned(trimmed);
+    } else if (scanMode === 'product') {
+      void handleProductScanned(trimmed);
     }
     setManualInput('');
-    scanHandled.current = false;
   };
 
-  const handleAction = (action: '입고' | '출고' | '이동' | '조회') => {
-    setActionDialogOpen(false);
-    scanHandled.current = false;
+  const startChangeLocation = () => {
+    if (!currentLocation || locationProducts.length === 0) return;
+    setChangeLocationTarget({ from: currentLocation, items: locationProducts });
+    setNewLocationScanned(null);
+    setScanMode('location');
+  };
 
-    if (scannedType === 'location' || (scannedType === 'unknown' && /^[A-Za-z]/.test(scannedValue))) {
-      const code = encodeURIComponent(scannedValue);
-      if (action === '조회') {
-        router.push(`/inventory/${code}`);
-      } else {
-        router.push(`/inventory/${code}?action=${action}`);
+  const handleChangeLocationScan = useCallback(async (code: string) => {
+    if (!changeLocationTarget) return;
+    const loc = await lookupLocation(code);
+    if (!loc) {
+      toast.error(t.messages.unknownBarcode);
+      return;
+    }
+    playSuccessFeedback();
+    setNewLocationScanned(loc);
+    setScanMode(null);
+  }, [lookupLocation]);
+
+  const confirmLocationChange = async () => {
+    if (!changeLocationTarget || !newLocationScanned) return;
+    setProcessing(true);
+    try {
+      for (const item of changeLocationTarget.items) {
+        await supabase.from('inventory').update({ location_id: newLocationScanned.id }).eq('id', item.id);
+        await supabase.from('audit_log').insert({
+          action: '이동',
+          product_id: item.product_id,
+          location_from: changeLocationTarget.from.id,
+          location_to: newLocationScanned.id,
+          quantity_change: item.quantity,
+          user_id: null
+        });
       }
-    } else {
-      if (action === '조회') {
-        router.push(`/search?q=${encodeURIComponent(scannedValue)}`);
-      } else {
-        router.push(`/search?q=${encodeURIComponent(scannedValue)}&action=${action}`);
-      }
+      setCurrentLocation(newLocationScanned);
+      setStoredLocation(newLocationScanned);
+      setLocationProducts(await fetchInventoryAtLocation(newLocationScanned.id));
+      setChangeLocationTarget(null);
+      setNewLocationScanned(null);
+      toast.success(t.messages.locationUpdated);
+    } catch (err) {
+      console.error(err);
+      toast.error(t.messages.unknownBarcode);
+    } finally {
+      setProcessing(false);
     }
   };
 
-  const updateBatchQuantity = (index: number, delta: number) => {
+  const updateBatchQuantity = (index: number, value: number) => {
     setBatchItems((prev) =>
-      prev.map((it, i) =>
-        i === index ? { ...it, quantity: Math.max(1, it.quantity + delta) } : it
-      )
+      prev.map((it, i) => (i === index ? { ...it, quantity_adjust: value } : it))
     );
   };
 
@@ -270,11 +255,16 @@ export function ScanPageClient() {
 
   const processBatch = async (action: '입고' | '출고' | '포장') => {
     if (batchItems.length === 0) {
-      toast.error('배치 목록이 비어 있습니다.');
+      toast.error(t.messages.batchEmpty);
       return;
     }
-    if ((action === '출고' || action === '포장') && !defaultLocation) {
-      toast.error('출고/포장 시 기본 위치를 먼저 스캔하세요.');
+    const loc = currentLocation ?? getStoredLocation();
+    if (!loc) {
+      toast.error(t.messages.noLocationSet);
+      return;
+    }
+    if ((action === '출고' || action === '포장') && !loc) {
+      toast.error(t.messages.locationRequired);
       return;
     }
     setProcessing(true);
@@ -282,34 +272,32 @@ export function ScanPageClient() {
     let failed = 0;
     try {
       for (const item of batchItems) {
-        const locId = item.location_id ?? defaultLocation?.id;
-        if ((action === '출고' || action === '포장') && !locId) {
-          toast.error(`${item.sku}: 위치 정보가 없습니다.`);
-          failed++;
-          continue;
-        }
+        const qty = Math.abs(item.quantity_adjust) || 1;
+        const locId = item.location_id ?? loc.id;
+
         if (action === '입고') {
+          const amt = Math.max(1, item.quantity_adjust);
           const { data: existing } = await supabase
             .from('inventory')
             .select('id, quantity')
             .eq('product_id', item.product_id)
-            .eq('location_id', locId!)
+            .eq('location_id', locId)
             .maybeSingle();
-          const newQty = (existing?.quantity ?? 0) + item.quantity;
+          const newQty = (existing?.quantity ?? 0) + amt;
           if (existing) {
             await supabase.from('inventory').update({ quantity: newQty }).eq('id', existing.id);
           } else {
             await supabase.from('inventory').insert({
               product_id: item.product_id,
-              location_id: locId!,
-              quantity: item.quantity
+              location_id: locId,
+              quantity: amt
             });
           }
           await supabase.from('audit_log').insert({
             action: '입고',
             product_id: item.product_id,
             location_to: locId,
-            quantity_change: item.quantity,
+            quantity_change: amt,
             user_id: null
           });
           success++;
@@ -318,263 +306,267 @@ export function ScanPageClient() {
             .from('inventory')
             .select('id, quantity')
             .eq('product_id', item.product_id)
-            .eq('location_id', locId!)
+            .eq('location_id', locId)
             .maybeSingle();
-          if (!inv || inv.quantity < item.quantity) {
-            toast.error(`${item.sku}: 재고 부족 (현재 ${inv?.quantity ?? 0}개)`);
+          if (!inv || inv.quantity < qty) {
+            toast.error(t.messages.insufficientQty(item.sku, inv?.quantity ?? 0));
             failed++;
             continue;
           }
-          await supabase
-            .from('inventory')
-            .update({ quantity: inv.quantity - item.quantity })
-            .eq('id', inv.id);
+          await supabase.from('inventory').update({ quantity: inv.quantity - qty }).eq('id', inv.id);
           await supabase.from('audit_log').insert({
             action,
             product_id: item.product_id,
             location_from: locId,
-            quantity_change: item.quantity,
+            quantity_change: qty,
             user_id: null
           });
           success++;
         }
       }
       setBatchItems([]);
-      setDefaultLocation(null);
-      toast.success(`${action} 완료: ${success}건${failed > 0 ? `, 실패 ${failed}건` : ''}`);
+      toast.success(t.messages.itemsProcessed(success));
     } catch (err) {
       console.error(err);
-      toast.error('처리 중 오류가 발생했습니다.');
+      toast.error(t.messages.unknownBarcode);
     } finally {
       setProcessing(false);
     }
   };
 
-  useEffect(() => {
-    scanHandled.current = false;
-  }, [isBatchMode]);
+  const isScanning = scanMode !== null;
+  const scanHandler = useMemo(() => {
+    if (changeLocationTarget) return handleChangeLocationScan;
+    return handleScan;
+  }, [changeLocationTarget, handleChangeLocationScan, handleScan]);
 
   return (
     <main className="flex min-h-screen flex-col bg-black text-white">
       <div className="flex items-center justify-between px-4 py-3">
-        <h1 className="text-sm font-medium">
-          {isBatchMode ? '배치 스캔' : '스캔'}
-        </h1>
-        <div className="flex gap-2">
-          {isBatchMode && (
-            <Link href="/scan">
-              <Button variant="outline" size="sm" className="h-8 border-white/30 bg-transparent text-xs text-white">
-                단일 모드
-              </Button>
-            </Link>
-          )}
+        <h1 className="text-sm font-medium">스캔 (Scan)</h1>
+        {isScanning && (
           <Button
             variant="outline"
             size="sm"
             className="h-8 border-white/30 bg-transparent text-xs text-white"
             onClick={() => {
-              scanHandled.current = false;
-              setIsScanning((prev) => !prev);
+              setScanMode(null);
+              if (changeLocationTarget) setChangeLocationTarget(null);
+              setNewLocationScanned(null);
             }}
           >
-            {isScanning ? '스캔 종료' : '스캔 시작'}
+            {t.scan.stopScan}
           </Button>
-        </div>
-      </div>
-
-      <div className="relative flex flex-1 flex-col">
-        {isScanning ? (
-          <>
-            <div className="flex-1">
-              <Html5QrcodeScanner
-                onScan={handleScan}
-                onError={(message) => {
-                  if (!hasCameraError.current) {
-                    hasCameraError.current = true;
-                    toast.error('카메라를 사용할 수 없습니다. 권한을 확인하세요.');
-                  }
-                  console.error(message);
-                }}
-                fullscreen
-              />
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="h-64 w-64 rounded-3xl border-2 border-emerald-400/80 shadow-[0_0_40px_rgba(16,185,129,0.7)]" />
-              </div>
-            </div>
-
-            {isBatchMode && (
-              <div className="max-h-[40vh] overflow-auto border-t border-white/20 bg-black/90 p-3">
-                <p className="mb-2 text-xs text-white/80">
-                  기본 위치: {defaultLocation?.code ?? '-'}
-                </p>
-                {batchItems.length === 0 ? (
-                  <p className="py-4 text-center text-xs text-white/60">
-                    바코드나 위치 코드를 스캔하세요
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="border-white/20 hover:bg-transparent">
-                          <TableHead className="text-xs text-white/80">상품명</TableHead>
-                          <TableHead className="text-xs text-white/80">SKU</TableHead>
-                          <TableHead className="text-xs text-white/80">바코드</TableHead>
-                          <TableHead className="text-xs text-white/80">수량</TableHead>
-                          <TableHead className="text-xs text-white/80">위치</TableHead>
-                          <TableHead className="w-8" />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {batchItems.map((item, i) => (
-                          <TableRow key={`${item.product_id}-${i}`} className="border-white/20">
-                            <TableCell className="max-w-[80px] truncate text-xs text-white">
-                              {item.name}
-                            </TableCell>
-                            <TableCell className="font-mono text-[11px] text-white/90">
-                              {item.sku}
-                            </TableCell>
-                            <TableCell className="font-mono text-[11px] text-white/70">
-                              {item.barcode ?? '-'}
-                            </TableCell>
-                            <TableCell className="text-xs text-white">
-                              <span className="mr-1 inline-flex gap-0.5">
-                                <button
-                                  type="button"
-                                  className="rounded bg-white/20 px-1"
-                                  onClick={() => updateBatchQuantity(i, -1)}
-                                >
-                                  -
-                                </button>
-                                {item.quantity}
-                                <button
-                                  type="button"
-                                  className="rounded bg-white/20 px-1"
-                                  onClick={() => updateBatchQuantity(i, 1)}
-                                >
-                                  +
-                                </button>
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-[11px] text-white/80">
-                              {item.location_code ?? '-'}
-                            </TableCell>
-                            <TableCell>
-                              <button
-                                type="button"
-                                onClick={() => removeBatchItem(i)}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-                {batchItems.length > 0 && (
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <Button
-                      size="sm"
-                      className="h-11 gap-1 text-xs"
-                      onClick={() => processBatch('입고')}
-                      disabled={processing || !defaultLocation}
-                    >
-                      <ArrowDownToLine className="h-4 w-4" />
-                      입고
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-11 gap-1 border-white/30 bg-white/10 text-xs text-white"
-                      onClick={() => processBatch('출고')}
-                      disabled={processing}
-                    >
-                      <ArrowUpFromLine className="h-4 w-4" />
-                      출고
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-11 gap-1 border-white/30 bg-white/10 text-xs text-white"
-                      onClick={() => processBatch('포장')}
-                      disabled={processing}
-                    >
-                      <Package className="h-4 w-4" />
-                      포장
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        ) : (
-          <Card className="mx-4 w-full max-w-md bg-background/80 text-foreground">
-            <CardHeader>
-              <CardTitle className="text-base">바코드 / QR 스캔</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <Button
-                className="h-14 w-full text-base"
-                onClick={() => setIsScanning(true)}
-              >
-                스캔 시작
-              </Button>
-              {isBatchMode && (
-                <p className="text-xs text-muted-foreground">배치 모드: 여러 상품/위치 스캔 후 일괄 처리</p>
-              )}
-              <form onSubmit={handleManualSubmit} className="flex gap-2">
-                <Input
-                  placeholder="수동 입력 (위치 또는 바코드)"
-                  value={manualInput}
-                  onChange={(e) => setManualInput(e.target.value)}
-                  className="flex-1"
-                />
-                <Button type="submit" variant="outline" className="shrink-0">
-                  입력
-                </Button>
-              </form>
-
-              {lastScanned && (
-                <p className="text-xs text-muted-foreground">
-                  마지막: <span className="font-mono">{lastScanned}</span>
-                </p>
-              )}
-            </CardContent>
-          </Card>
         )}
       </div>
 
-      {!isBatchMode && (
-        <Dialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                <span className="font-mono">{scannedValue}</span> 선택
-              </DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-2 gap-3">
-              <Button className="h-14 gap-2" onClick={() => handleAction('입고')}>
-                <ArrowDownToLine className="h-5 w-5" />
-                입고
-              </Button>
-              <Button variant="outline" className="h-14 gap-2" onClick={() => handleAction('출고')}>
-                <ArrowUpFromLine className="h-5 w-5" />
-                출고
-              </Button>
-              <Button variant="outline" className="h-14 gap-2" onClick={() => handleAction('이동')}>
-                <Truck className="h-5 w-5" />
-                이동
-              </Button>
-              <Button variant="outline" className="h-14 gap-2" onClick={() => handleAction('조회')}>
-                <Search className="h-5 w-5" />
-                조회
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+      {!isScanning ? (
+        <div className="flex flex-1 flex-col gap-4 p-4">
+          <div className="flex flex-col gap-3">
+            <Button
+              className="h-16 w-full gap-2 text-base"
+              onClick={() => setScanMode('location')}
+            >
+              <MapPinned className="h-5 w-5" />
+              {t.scan.locationScan}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-16 w-full gap-2 border-white/30 bg-white/10 text-base text-white"
+              onClick={() => setScanMode('product')}
+            >
+              <Package className="h-5 w-5" />
+              {t.scan.productBarcodeScan}
+            </Button>
+          </div>
+
+          {currentLocation && (
+            <p className="text-xs text-white/70">
+              현재 위치 (Current): {currentLocation.code} - {currentLocation.name}
+            </p>
+          )}
+
+          <form onSubmit={handleManualSubmit} className="flex gap-2">
+            <Input
+              placeholder={t.scan.manualInput}
+              value={manualInput}
+              onChange={(e) => setManualInput(e.target.value)}
+              className="flex-1 border-white/30 bg-white/5 text-white"
+            />
+            <Button type="submit" variant="outline" className="shrink-0 border-white/30 text-white">
+              입력
+            </Button>
+          </form>
+
+          {locationProducts.length > 0 && !changeLocationTarget && (
+            <Card className="border-white/20 bg-white/5">
+              <CardHeader>
+                <CardTitle className="text-sm text-white">
+                  {currentLocation?.code} - {t.table.location}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="max-h-60 overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-white/20">
+                        <TableHead className="text-xs text-white/80">{t.table.productName}</TableHead>
+                        <TableHead className="text-xs text-white/80">{t.table.sku}</TableHead>
+                        <TableHead className="text-xs text-white/80">{t.table.barcode}</TableHead>
+                        <TableHead className="text-xs text-white/80">{t.table.quantity}</TableHead>
+                        <TableHead className="text-xs text-white/80">{t.table.lot}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {locationProducts.map((row) => (
+                        <TableRow key={row.id} className="border-white/20">
+                          <TableCell className="text-xs text-white">{row.product?.name}</TableCell>
+                          <TableCell className="font-mono text-[11px] text-white/90">{row.product?.sku}</TableCell>
+                          <TableCell className="font-mono text-[11px] text-white/70">{row.product?.barcode ?? '-'}</TableCell>
+                          <TableCell className="text-xs text-white">{row.quantity}</TableCell>
+                          <TableCell className="text-[11px] text-white/70">{row.lot ?? '-'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full border-white/30 bg-white/10 text-white"
+                  onClick={startChangeLocation}
+                >
+                  {t.scan.changeLocation}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {batchItems.length > 0 && (
+            <Card className="border-white/20 bg-white/5">
+              <CardHeader>
+                <CardTitle className="text-sm text-white">배치 목록 (Batch List)</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="max-h-60 overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-white/20">
+                        <TableHead className="text-xs text-white/80">{t.table.productName}</TableHead>
+                        <TableHead className="text-xs text-white/80">{t.table.sku}</TableHead>
+                        <TableHead className="text-xs text-white/80">{t.table.barcode}</TableHead>
+                        <TableHead className="text-xs text-white/80">{t.table.quantityChange}</TableHead>
+                        <TableHead className="text-xs text-white/80">{t.table.location}</TableHead>
+                        <TableHead className="w-8" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {batchItems.map((item, i) => (
+                        <TableRow key={`${item.product_id}-${i}`} className="border-white/20">
+                          <TableCell className="max-w-[80px] truncate text-xs text-white">{item.name}</TableCell>
+                          <TableCell className="font-mono text-[11px] text-white/90">{item.sku}</TableCell>
+                          <TableCell className="font-mono text-[11px] text-white/70">{item.barcode ?? '-'}</TableCell>
+                          <TableCell className="text-xs text-white">
+                            <Input
+                              type="number"
+                              value={item.quantity_adjust}
+                              onChange={(e) => updateBatchQuantity(i, parseInt(e.target.value, 10) || 0)}
+                              className="h-8 w-16 border-white/30 bg-white/5 text-white"
+                            />
+                          </TableCell>
+                          <TableCell className="text-[11px] text-white/80">{item.location_code ?? '-'}</TableCell>
+                          <TableCell>
+                            <button type="button" onClick={() => removeBatchItem(i)} className="text-destructive">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    size="sm"
+                    className="h-11 gap-1 text-xs"
+                    onClick={() => processBatch('입고')}
+                    disabled={processing || !(currentLocation ?? getStoredLocation())}
+                  >
+                    <ArrowDownToLine className="h-4 w-4" />
+                    {t.actions.stockIn}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-11 gap-1 border-white/30 bg-white/10 text-xs text-white"
+                    onClick={() => processBatch('출고')}
+                    disabled={processing}
+                  >
+                    <ArrowUpFromLine className="h-4 w-4" />
+                    {t.actions.stockOut}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-11 gap-1 border-white/30 bg-white/10 text-xs text-white"
+                    onClick={() => processBatch('포장')}
+                    disabled={processing}
+                  >
+                    <Package className="h-4 w-4" />
+                    {t.actions.pack}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      ) : (
+        <div className="relative flex flex-1 flex-col">
+          <Html5QrcodeScanner
+            onScan={(r) => {
+              const trimmed = String(r ?? '').trim();
+              if (!trimmed) return;
+              if (changeLocationTarget) {
+                void handleChangeLocationScan(trimmed);
+              } else {
+                handleScan(r);
+              }
+            }}
+            onError={(msg) => {
+              if (!hasCameraError.current) {
+                hasCameraError.current = true;
+                toast.error(t.messages.cameraError);
+              }
+              console.error(msg);
+            }}
+            fullscreen
+          />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="h-64 w-64 rounded-3xl border-2 border-emerald-400/80 shadow-[0_0_40px_rgba(16,185,129,0.7)]" />
+          </div>
+          <p className="absolute bottom-4 left-0 right-0 text-center text-xs text-white/70">
+            {scanMode === 'location' ? t.scan.scanLocation : t.scan.scanProduct}
+          </p>
+        </div>
       )}
+
+      <Dialog
+        open={!!changeLocationTarget && !!newLocationScanned}
+        onOpenChange={(o) => {
+          if (!o) {
+            setNewLocationScanned(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{newLocationScanned ? t.messages.moveConfirm(newLocationScanned.code) : ''}</DialogTitle>
+          </DialogHeader>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setNewLocationScanned(null)}>취소 (Cancel)</Button>
+            <Button onClick={confirmLocationChange} disabled={processing}>{t.scan.save}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
