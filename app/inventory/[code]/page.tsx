@@ -13,9 +13,11 @@ type InventoryRow = {
 
 interface Props {
   params: { code: string };
+  searchParams: Promise<{ action?: string; sku?: string }>;
 }
 
-export default async function InventoryByLocationPage({ params }: Props) {
+export default async function InventoryByLocationPage({ params, searchParams }: Props) {
+  const sp = await searchParams;
   const code = decodeURIComponent(params.code);
   const supabase = createSupabaseServerClient();
 
@@ -47,6 +49,8 @@ export default async function InventoryByLocationPage({ params }: Props) {
     <InventoryClient
       location={location}
       initialItems={items}
+      initialAction={sp.action}
+      initialSku={sp.sku}
     />
   );
 }

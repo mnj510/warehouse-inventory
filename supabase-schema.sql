@@ -15,6 +15,7 @@ create table public.products (
   name text not null,
   category text,
   description text,
+  min_stock integer default 0 check (min_stock >= 0),
   inserted_at timestamptz not null default timezone('utc'::text, now())
 );
 

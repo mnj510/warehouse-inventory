@@ -1,0 +1,11 @@
+---
+description: 배포 워크플로우 안내
+alwaysApply: true
+---
+
+# 배포 (GitHub + Vercel)
+
+- 코드 수정 후 **배포**: 터미널에서 `npm run deploy` 실행
+  - 빌드 → 변경사항 add → commit → push (main)
+  - 푸시 시 Vercel이 자동으로 재배포
+- Cursor에서 수정 후 배포할 때: 변경 완료 시 `npm run deploy`를 실행하거나, 사용자에게 실행을 제안
