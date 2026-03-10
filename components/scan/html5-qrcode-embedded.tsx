@@ -42,9 +42,7 @@ export function Html5QrcodeEmbedded({ onScan, onError, fullscreen }: Html5Qrcode
                 console.error('onScan error', e);
               }
             },
-            (errorMessage) => {
-              onError?.(errorMessage);
-            }
+            undefined // 바코드 미발견 시마다 호출되므로 여기서 onError 호출 금지
           );
           return; // 성공 시 종료
         } catch (error) {
