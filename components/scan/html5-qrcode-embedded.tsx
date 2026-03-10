@@ -44,8 +44,8 @@ export function Html5QrcodeEmbedded({ onScan, onError, fullscreen }: Html5Qrcode
 
     return () => {
       if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => undefined);
-        scannerRef.current.clear().catch(() => undefined);
+        Promise.resolve(scannerRef.current.stop()).catch(() => undefined);
+        Promise.resolve(scannerRef.current.clear() as unknown).catch(() => undefined);
       }
     };
   }, [fullscreen, onScan, onError]);
@@ -61,7 +61,7 @@ export function Html5QrcodeEmbedded({ onScan, onError, fullscreen }: Html5Qrcode
       if (!track) return;
       await track.applyConstraints({
         advanced: [{ torch: !torchOn }]
-      } as MediaTrackConstraints);
+      } as unknown as MediaTrackConstraints);
       setTorchOn((prev) => !prev);
     } catch (e) {
       console.error(e);

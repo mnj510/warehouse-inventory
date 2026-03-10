@@ -1,4 +1,4 @@
-\"use client\";
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
@@ -91,29 +91,29 @@ export function InventoryClient({ location, initialItems }: Props) {
   );
 
   return (
-    <main className=\"mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 pb-6 pt-6\">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 px-4 pb-6 pt-6">
       <Card>
         <CardHeader>
-          <CardTitle className=\"text-base\">
+          <CardTitle className="text-base">
             위치 {location.code}{' '}
-            <span className=\"ml-1 text-xs text-muted-foreground\">{location.name}</span>
+            <span className="ml-1 text-xs text-muted-foreground">{location.name}</span>
           </CardTitle>
         </CardHeader>
-        <CardContent className=\"space-y-3\">
-          <div className=\"grid grid-cols-3 gap-2\">
-            <Button className=\"h-10 text-xs\" onClick={() => setMode('입고')}>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            <Button className="h-10 text-xs" onClick={() => setMode('입고')}>
               입고
             </Button>
             <Button
-              className=\"h-10 text-xs\"
-              variant=\"outline\"
+              className="h-10 text-xs"
+              variant="outline"
               onClick={() => setMode('출고')}
             >
               출고
             </Button>
             <Button
-              className=\"h-10 text-xs\"
-              variant=\"outline\"
+              className="h-10 text-xs"
+              variant="outline"
               onClick={() => setMode('이동')}
             >
               이동
@@ -121,28 +121,28 @@ export function InventoryClient({ location, initialItems }: Props) {
           </div>
 
           {sorted.length === 0 ? (
-            <p className=\"text-xs text-muted-foreground\">이 위치에 재고가 없습니다.</p>
+            <p className="text-xs text-muted-foreground">이 위치에 재고가 없습니다.</p>
           ) : (
-            <ul className=\"space-y-1 text-xs\">
+            <ul className="space-y-1 text-xs">
               {sorted.map((row) => (
                 <li
                   key={row.id}
-                  className=\"flex items-center justify-between rounded-lg border border-border px-3 py-2\"
+                  className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
                 >
                   <div>
-                    <p className=\"font-mono text-[11px] text-muted-foreground\">
+                    <p className="font-mono text-[11px] text-muted-foreground">
                       {row.product?.sku ?? 'SKU 없음'}
                     </p>
-                    <p className=\"text-xs font-semibold\">
+                    <p className="text-xs font-semibold">
                       {row.product?.name ?? '상품 정보 없음'}
                     </p>
-                    <p className=\"text-[11px] text-muted-foreground\">
+                    <p className="text-[11px] text-muted-foreground">
                       LOT: {row.lot ?? '-'}
                     </p>
                   </div>
-                  <div className=\"text-right\">
-                    <p className=\"text-sm font-bold\">{row.quantity.toLocaleString()}개</p>
-                    <p className=\"text-[10px] text-muted-foreground\">
+                  <div className="text-right">
+                    <p className="text-sm font-bold">{row.quantity.toLocaleString()}개</p>
+                    <p className="text-[10px] text-muted-foreground">
                       {new Date(row.updated_at).toLocaleString()}
                     </p>
                   </div>
@@ -159,7 +159,6 @@ export function InventoryClient({ location, initialItems }: Props) {
         location={location}
         supabase={supabase}
         onUpdated={() => {
-          // 최신 데이터 재조회
           void supabase
             .from('inventory')
             .select(
@@ -168,7 +167,14 @@ export function InventoryClient({ location, initialItems }: Props) {
             .eq('location_id', location.id)
             .order('updated_at', { ascending: false })
             .then(({ data }) => {
-              if (data) setItems(data as InventoryRow[]);
+              if (data)
+                setItems(
+                  data.map((row: { product?: unknown; location?: unknown }) => ({
+                    ...row,
+                    product: Array.isArray(row.product) ? row.product[0] ?? null : row.product,
+                    location: Array.isArray(row.location) ? row.location[0] ?? null : row.location
+                  })) as InventoryRow[]
+                );
             });
         }}
       />
@@ -346,82 +352,82 @@ function InOutDialog({ mode, onOpenChange, location, supabase, onUpdated }: InOu
 
             {!isMove ? (
               <form
-                className=\"space-y-3\"
+                className="space-y-3"
                 onSubmit={inoutForm.handleSubmit(handleSubmitInOut)}
               >
-                <div className=\"space-y-1\">
-                  <Label htmlFor=\"sku\">SKU</Label>
-                  <Input id=\"sku\" {...inoutForm.register('sku')} />
+                <div className="space-y-1">
+                  <Label htmlFor="sku">SKU</Label>
+                  <Input id="sku" {...inoutForm.register('sku')} />
                   {inoutForm.formState.errors.sku && (
-                    <p className=\"text-[11px] text-destructive\">
+                    <p className="text-[11px] text-destructive">
                       {inoutForm.formState.errors.sku.message}
                     </p>
                   )}
                 </div>
-                <div className=\"space-y-1\">
-                  <Label htmlFor=\"quantity\">수량</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="quantity">수량</Label>
                   <Input
-                    id=\"quantity\"
-                    type=\"number\"
-                    inputMode=\"numeric\"
+                    id="quantity"
+                    type="number"
+                    inputMode="numeric"
                     {...inoutForm.register('quantity')}
                   />
                   {inoutForm.formState.errors.quantity && (
-                    <p className=\"text-[11px] text-destructive\">
+                    <p className="text-[11px] text-destructive">
                       {inoutForm.formState.errors.quantity.message}
                     </p>
                   )}
                 </div>
-                <div className=\"space-y-1\">
-                  <Label htmlFor=\"lot\">LOT (선택)</Label>
-                  <Input id=\"lot\" {...inoutForm.register('lot')} />
+                <div className="space-y-1">
+                  <Label htmlFor="lot">LOT (선택)</Label>
+                  <Input id="lot" {...inoutForm.register('lot')} />
                 </div>
-                <Button type=\"submit\" className=\"mt-1 h-10 w-full text-sm\">
+                <Button type="submit" className="mt-1 h-10 w-full text-sm">
                   {mode} 실행
                 </Button>
               </form>
             ) : (
               <form
-                className=\"space-y-3\"
+                className="space-y-3"
                 onSubmit={moveForm.handleSubmit(handleSubmitMove)}
               >
-                <div className=\"space-y-1\">
-                  <Label htmlFor=\"sku-move\">SKU</Label>
-                  <Input id=\"sku-move\" {...moveForm.register('sku')} />
+                <div className="space-y-1">
+                  <Label htmlFor="sku-move">SKU</Label>
+                  <Input id="sku-move" {...moveForm.register('sku')} />
                   {moveForm.formState.errors.sku && (
-                    <p className=\"text-[11px] text-destructive\">
+                    <p className="text-[11px] text-destructive">
                       {moveForm.formState.errors.sku.message}
                     </p>
                   )}
                 </div>
-                <div className=\"space-y-1\">
-                  <Label htmlFor=\"quantity-move\">수량</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="quantity-move">수량</Label>
                   <Input
-                    id=\"quantity-move\"
-                    type=\"number\"
-                    inputMode=\"numeric\"
+                    id="quantity-move"
+                    type="number"
+                    inputMode="numeric"
                     {...moveForm.register('quantity')}
                   />
                   {moveForm.formState.errors.quantity && (
-                    <p className=\"text-[11px] text-destructive\">
+                    <p className="text-[11px] text-destructive">
                       {moveForm.formState.errors.quantity.message}
                     </p>
                   )}
                 </div>
-                <div className=\"space-y-1\">
-                  <Label htmlFor=\"lot-move\">LOT (선택)</Label>
-                  <Input id=\"lot-move\" {...moveForm.register('lot')} />
+                <div className="space-y-1">
+                  <Label htmlFor="lot-move">LOT (선택)</Label>
+                  <Input id="lot-move" {...moveForm.register('lot')} />
                 </div>
-                <div className=\"space-y-1\">
-                  <Label htmlFor=\"to\">이동할 위치 코드</Label>
-                  <Input id=\"to\" {...moveForm.register('toLocationCode')} />
+                <div className="space-y-1">
+                  <Label htmlFor="to">이동할 위치 코드</Label>
+                  <Input id="to" {...moveForm.register('toLocationCode')} />
                   {moveForm.formState.errors.toLocationCode && (
-                    <p className=\"text-[11px] text-destructive\">
+                    <p className="text-[11px] text-destructive">
                       {moveForm.formState.errors.toLocationCode.message}
                     </p>
                   )}
                 </div>
-                <Button type=\"submit\" className=\"mt-1 h-10 w-full text-sm\">
+                <Button type="submit" className="mt-1 h-10 w-full text-sm">
                   이동 실행
                 </Button>
               </form>

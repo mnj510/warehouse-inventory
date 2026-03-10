@@ -17,11 +17,6 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    "types": [
-      "next",
-      "next/image-types",
-      "next/navigation"
-    ],
     "baseUrl": ".",
     "paths": {
       "@/components/*": [
