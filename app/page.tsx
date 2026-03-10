@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Search, ScanLine, PackageSearch, MapPinned, Plus, History } from 'lucide-react';
+import { Search, PackageSearch, MapPinned, Plus, History, Package } from 'lucide-react';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { LowStockSection } from '@/components/home/low-stock-section';
 import { RecentLocationShortcut } from '@/components/home/recent-location-shortcut';
@@ -52,10 +52,16 @@ export default async function HomePage() {
               이력 조회 (입고/출고/포장)
             </Button>
           </Link>
-          <Link href="/scan" className="w-full">
+          <Link href="/scan?mode=location" className="w-full">
             <Button className="flex h-14 w-full items-center justify-center gap-2 text-base">
-              <ScanLine className="h-5 w-5" />
-              위치 스캔 / 제품 바코드 스캔 (Location / Product Scan)
+              <MapPinned className="h-5 w-5" />
+              위치 스캔 (Location Scan)
+            </Button>
+          </Link>
+          <Link href="/scan?mode=product" className="w-full">
+            <Button variant="outline" className="flex h-14 w-full items-center justify-center gap-2 text-base">
+              <Package className="h-5 w-5" />
+              제품 바코드 스캔 (Product Barcode Scan)
             </Button>
           </Link>
         </CardContent>

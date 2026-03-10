@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,7 +53,9 @@ type BatchItem = {
 };
 
 export function ScanPageClient() {
-  const [scanMode, setScanMode] = useState<ScanMode>(null);
+  const searchParams = useSearchParams();
+  const initialMode = searchParams.get('mode') as ScanMode | null;
+  const [scanMode, setScanMode] = useState<ScanMode>(initialMode === 'location' || initialMode === 'product' ? initialMode : null);
   const [currentLocation, setCurrentLocation] = useState<StoredLocation | null>(null);
   const [locationProducts, setLocationProducts] = useState<InventoryRow[]>([]);
   const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
