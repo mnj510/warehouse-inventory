@@ -88,20 +88,26 @@ export function ScanPageClient() {
   };
 
   const lookupByBarcodeOrSku = async (trimmed: string) => {
-    const [byBarcode, bySku] = await Promise.all([
-      supabase.from('products').select('id, sku, name, barcode').eq('barcode', trimmed).maybeSingle(),
-      supabase.from('products').select('id, sku, name, barcode').eq('sku', trimmed).maybeSingle()
-    ]);
-    return byBarcode.data ?? bySku.data;
+    try {
+      const bySku = await supabase.from('products').select('id, sku, name').eq('sku', trimmed).maybeSingle();
+      if (bySku.data) return { ...bySku.data, barcode: (bySku.data as { barcode?: string }).barcode ?? null };
+      const byBarcode = await supabase.from('products').select('id, sku, name').eq('barcode', trimmed).maybeSingle();
+      if (byBarcode.error) return null;
+      return byBarcode.data ? { ...byBarcode.data, barcode: trimmed } : null;
+    } catch (e) {
+      console.error('lookupByBarcodeOrSku', e);
+      return null;
+    }
   };
 
   const addToBatch = async (trimmed: string) => {
-    const product = await lookupByBarcodeOrSku(trimmed);
-    if (!product) {
-      toast.error('등록되지 않은 바코드입니다.');
-      return;
-    }
-    const existing = batchItems.find(
+    try {
+      const product = await lookupByBarcodeOrSku(trimmed);
+      if (!product) {
+        toast.error('등록되지 않은 바코드입니다.');
+        return;
+      }
+      const existing = batchItems.find(
       (i) => i.product_id === product.id && i.location_id === defaultLocation?.id
     );
     if (existing) {
@@ -123,8 +129,12 @@ export function ScanPageClient() {
           location_code: defaultLocation?.code ?? null
         }
       ]);
+      toast.success(`${product.name} 추가`);
     }
-    toast.success(`${product.name} 추가`);
+    } catch (e) {
+      console.error('addToBatch', e);
+      toast.error('등록되지 않은 바코드입니다.');
+    }
   };
 
   const setLocationToBatch = (data: { id: string; code: string }) => {
@@ -136,29 +146,35 @@ export function ScanPageClient() {
   };
 
   const handleBatchScan = async (trimmed: string) => {
-    const [locRes, prodRes] = await Promise.all([
-      supabase.from('locations').select('id, code').eq('code', trimmed).maybeSingle(),
-      lookupByBarcodeOrSku(trimmed)
-    ]);
-    if (locRes.data) {
-      setLocationToBatch(locRes.data);
-    } else if (prodRes) {
-      await addToBatch(trimmed);
-    } else {
-      toast.error('등록되지 않은 바코드입니다.');
+    try {
+      const [locRes, prodRes] = await Promise.all([
+        supabase.from('locations').select('id, code').eq('code', trimmed).maybeSingle(),
+        lookupByBarcodeOrSku(trimmed)
+      ]);
+      if (locRes.data) {
+        setLocationToBatch(locRes.data);
+      } else if (prodRes) {
+        await addToBatch(trimmed);
+      } else {
+        toast.error('등록되지 않은 바코드입니다.');
+      }
+    } catch (e) {
+      console.error('handleBatchScan', e);
+      toast.error('스캔 처리 중 오류가 발생했습니다.');
     }
   };
 
   const detectAndShowDialog = async (trimmed: string) => {
-    const [locRes, product] = await Promise.all([
-      supabase.from('locations').select('id, code').eq('code', trimmed).maybeSingle(),
-      lookupByBarcodeOrSku(trimmed)
-    ]);
+    try {
+      const [locRes, product] = await Promise.all([
+        supabase.from('locations').select('id, code').eq('code', trimmed).maybeSingle(),
+        lookupByBarcodeOrSku(trimmed)
+      ]);
 
-    const isLocation = locRes.data != null;
-    const isSku = product != null;
+      const isLocation = locRes.data != null;
+      const isSku = product != null;
 
-    if (isLocation) {
+      if (isLocation) {
       setScannedType('location');
       setScannedValue(trimmed);
       setActionDialogOpen(true);
@@ -179,10 +195,16 @@ export function ScanPageClient() {
         toast.error('등록되지 않은 바코드입니다.');
       }
     }
+    } catch (e) {
+      console.error('detectAndShowDialog', e);
+      toast.error('스캔 처리 중 오류가 발생했습니다.');
+    } finally {
+      scanHandled.current = false;
+    }
   };
 
-  const handleScan = (result: string) => {
-    const trimmed = String(result || '').trim();
+  const handleScan = (result: unknown) => {
+    const trimmed = String(result ?? '').trim();
     if (!trimmed) return;
 
     setLastScanned(trimmed);

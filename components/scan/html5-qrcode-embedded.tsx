@@ -27,7 +27,11 @@ export function Html5QrcodeEmbedded({ onScan, onError, fullscreen }: Html5Qrcode
             qrbox: fullscreen ? undefined : { width: 250, height: 250 }
           },
           (decodedText) => {
-            onScan(decodedText);
+            try {
+              onScan(String(decodedText ?? ''));
+            } catch (e) {
+              console.error('onScan error', e);
+            }
           },
           (errorMessage) => {
             onError?.(errorMessage);
